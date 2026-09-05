@@ -1,5 +1,0 @@
-const CACHE='flitsvis-v3-3';
-const ASSETS=["./", "./index.html", "./manifest.webmanifest", "./sw.js", "./gameparts/game_00.txt", "./gameparts/game_01.txt", "./gameparts/game_02.txt", "./assetdata/background_00.b64", "./assetdata/background_01.b64", "./assetdata/background_02.b64", "./assetdata/background_03.b64", "./assetdata/background_04.b64", "./assetdata/background_05.b64", "./assetdata/background_06.b64", "./assetdata/background_07.b64", "./assetdata/blue_00.b64", "./assetdata/pink_00.b64", "./assetdata/rainbow_00.b64", "./assetdata/rainbow_01.b64", "./assetdata/rainbow_02.b64", "./assetdata/yellow_00.b64"];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==CACHE).map(x=>caches.delete(x)))).then(()=>self.clients.claim())));
-self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(fetch(e.request).then(r=>{const c=r.clone();caches.open(CACHE).then(x=>x.put(e.request,c));return r}).catch(()=>caches.match(e.request)))});
