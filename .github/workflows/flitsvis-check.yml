@@ -1,0 +1,57 @@
+name: Flitsvis V3 check
+
+on:
+  push:
+    branches: ["codex/flitsvis-game"]
+  pull_request:
+    paths:
+      - "index.html"
+      - "gameparts/**"
+      - "assetdata/**"
+      - "manifest.webmanifest"
+      - "icon.svg"
+      - ".github/workflows/flitsvis-check.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild game HTML
+        run: |
+          cat gameparts/game_*.txt > /tmp/flitsvis-v3.html
+          test -s /tmp/flitsvis-v3.html
+          grep -q "Flitsvis" /tmp/flitsvis-v3.html
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('/tmp/flitsvis-v3.html').read_text()
+          scripts = re.findall(r'<script>(.*?)</script>', html, re.S)
+          Path('/tmp/inline.js').write_text('\n'.join(scripts))
+          PY
+          node --check /tmp/inline.js
+      - name: Validate WebP asset data
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          groups = {
+            'background': sorted(Path('assetdata').glob('background_*.b64')),
+            'rainbow': sorted(Path('assetdata').glob('rainbow_*.b64')),
+            'blue': sorted(Path('assetdata').glob('blue_*.b64')),
+            'pink': sorted(Path('assetdata').glob('pink_*.b64')),
+            'yellow': sorted(Path('assetdata').glob('yellow_*.b64')),
+          }
+          for name, files in groups.items():
+              text = ''.join(p.read_text().strip() for p in files if p.stat().st_size)
+              data = base64.b64decode(text, validate=True)
+              assert data[:4] == b'RIFF' and data[8:12] == b'WEBP', name
+              print(name, len(data))
+          PY
+      - name: Check loader and required files
+        run: |
+          test -s index.html
+          test -s manifest.webmanifest
+          test -s icon.svg

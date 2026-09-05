@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#3fa6c8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Flitsvis</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <style>
+:root{
+  --ink:#163b56;
+  --soft:#5f7b8d;
+  --sea:#5fc9e7;
+  --deep:#1c6f9c;
+  --sand:#f6dfae;
+  --pearl:#fffaf1;
+  --aqua:#55c8cb;
+  --shadow:0 18px 50px rgba(18,72,98,.22);
+}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none}
+body{font-family:ui-rounded,"SF Pro Rounded","Avenir Next Rounded",system-ui,sans-serif;color:var(--ink);background:#66cbe4;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none}
+button,input{font:inherit}
+button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.app{position:relative;width:100%;height:100dvh;overflow:hidden;isolation:isolate}
+.world{position:absolute;inset:0;background-color:#66cbe4;background-size:cover;background-position:center;z-index:0;transform:scale(1.01);transition:opacity .3s ease}
+.world::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.10),transparent 42%),linear-gradient(180deg,rgba(255,255,255,.05),rgba(18,89,124,.08));pointer-events:none}
+.bubble-layer{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+.bg-bubble{position:absolute;bottom:-60px;border-radius:50%;border:2px solid rgba(255,255,255,.38);background:rgba(255,255,255,.05);animation:bubbleUp linear infinite}
+@keyframes bubbleUp{to{transform:translateY(-120vh) translateX(var(--drift));opacity:0}}
+.play-area{position:absolute;inset:0;z-index:2}
+.screen{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
+.screen.active{display:flex}
+.teacher-button{position:absolute;z-index:20;right:max(12px,env(safe-area-inset-right));top:max(12px,env(safe-area-inset-top));width:46px;height:46px;border:0;border-radius:50%;background:rgba(17,79,109,.24);color:rgba(255,255,255,.88);display:grid;place-items:center;font-size:25px;backdrop-filter:blur(8px);box-shadow:0 5px 16px rgba(0,0,0,.08)}
+
+/* Start */
+.loading-pearl{width:64px;height:64px;border-radius:50%;background:radial-gradient(circle at 35% 28%,#fff,#fff4dd 34%,#bfe7eb 73%,#7bc2cf);box-shadow:0 0 22px rgba(255,255,255,.75);animation:loadingPulse 1.1s ease-in-out infinite}
+@keyframes loadingPulse{50%{transform:scale(.82);opacity:.62}}
+
+.start-screen{gap:18px}
+.hero-fish{width:min(560px,72vw);max-height:55dvh;object-fit:contain;filter:drop-shadow(0 16px 22px rgba(28,92,117,.18));animation:floatFish 4.3s ease-in-out infinite;pointer-events:none}
+@keyframes floatFish{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-11px) rotate(1deg)}}
+.pearl-button{border:3px solid rgba(255,255,255,.72);border-radius:50%;background:radial-gradient(circle at 35% 28%,#fff 0 14%,#fff5df 30%,#bfe9ed 70%,#75bcc9 100%);color:#1c7195;box-shadow:0 9px 0 rgba(30,121,151,.42),0 16px 28px rgba(26,92,116,.20),inset 0 0 16px rgba(255,255,255,.85);cursor:pointer}
+.play-button{width:104px;height:104px;font-size:42px;display:grid;place-items:center}
+.play-button span{transform:translateX(4px)}
+.pearl-button:active{transform:translateY(5px);box-shadow:0 4px 0 rgba(30,121,151,.42),0 9px 18px rgba(26,92,116,.18),inset 0 0 16px rgba(255,255,255,.85)}
+
+/* Game */
+.game-screen{justify-content:flex-start}
+.progress{position:absolute;left:50%;top:max(16px,env(safe-area-inset-top));transform:translateX(-50%);display:flex;gap:7px;z-index:8;pointer-events:none}
+.progress-dot{width:17px;height:14px;border-radius:54% 46% 48% 52%;background:rgba(255,255,255,.42);border:1px solid rgba(255,255,255,.55);box-shadow:0 1px 3px rgba(29,105,132,.08)}
+.progress-dot.done{background:linear-gradient(145deg,#fff2a6,#ffb7cf 52%,#a6e3f2);box-shadow:0 0 9px rgba(255,255,255,.65)}
+.level-badge{position:absolute;left:max(12px,env(safe-area-inset-left));top:max(12px,env(safe-area-inset-top));min-width:48px;height:42px;padding:0 11px;border-radius:22px;background:rgba(255,255,255,.44);display:grid;place-items:center;color:#23789a;font-size:19px;font-weight:900;backdrop-filter:blur(5px);pointer-events:none}
+.look-cue{position:absolute;top:13%;z-index:6;font-size:46px;opacity:0;transform:scale(.7);transition:opacity .16s ease,transform .16s ease;filter:drop-shadow(0 3px 6px rgba(26,95,122,.12))}
+.look-cue.show{opacity:1;transform:scale(1)}
+.fish-stage{position:absolute;left:50%;top:50%;transform:translate(-50%,-48%);width:min(760px,84vw);height:min(470px,54dvh);z-index:4}
+.flash-fish{position:absolute;width:clamp(88px,10vw,130px);height:clamp(88px,10vw,130px);object-fit:contain;transform:translate(-50%,-50%) scale(.72);opacity:0;filter:drop-shadow(0 8px 8px rgba(34,100,123,.13));transition:opacity .16s ease,transform .18s cubic-bezier(.2,.8,.25,1.15)}
+.flash-fish.in{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(var(--rot,0deg))}
+.flash-fish.out{opacity:0;transform:translate(-50%,-50%) scale(.82) translateY(-12px) rotate(var(--rot,0deg))}
+.answer-zone{position:absolute;left:0;right:0;bottom:max(22px,env(safe-area-inset-bottom));z-index:7;display:flex;justify-content:center;align-items:center}
+.answer-buttons{display:flex;gap:clamp(9px,1.6vw,15px);justify-content:center;flex-wrap:wrap;max-width:900px}
+.number-shell{width:clamp(66px,8.4vw,88px);height:clamp(66px,8.4vw,88px);border:2px solid rgba(255,255,255,.8);border-radius:49% 51% 47% 53%;background:radial-gradient(circle at 34% 28%,#fff 0 12%,#fff8e8 31%,#e4f1ee 68%,#badbdc 100%);box-shadow:0 7px 0 rgba(71,142,155,.38),0 11px 22px rgba(26,94,117,.16),inset 0 0 12px rgba(255,255,255,.82);color:#1e6685;font-weight:950;font-size:clamp(33px,4.6vw,46px);cursor:pointer}
+.number-shell:active{transform:translateY(4px);box-shadow:0 3px 0 rgba(71,142,155,.38),0 7px 14px rgba(26,94,117,.13),inset 0 0 12px rgba(255,255,255,.82)}
+.marbotic-target{width:180px;height:108px;border-radius:52% 48% 51% 49%;background:rgba(255,239,197,.44);border:3px dashed rgba(160,112,66,.42);display:grid;place-items:center;box-shadow:inset 0 8px 20px rgba(141,102,62,.08);animation:pulseTarget 2s ease-in-out infinite}
+.wood-number{font-size:54px;color:rgba(133,92,52,.48);transform:rotate(-8deg)}
+@keyframes pulseTarget{50%{transform:scale(1.035);background:rgba(255,244,211,.55)}}
+.feedback-layer{position:absolute;inset:0;z-index:12;display:grid;place-items:center;background:rgba(234,251,250,.22);pointer-events:none}
+.feedback-layer img{width:min(360px,52vw);filter:drop-shadow(0 15px 24px rgba(26,91,115,.18));animation:feedbackPop .44s cubic-bezier(.2,.85,.3,1.2) both}
+@keyframes feedbackPop{from{opacity:0;transform:scale(.62)}to{opacity:1;transform:scale(1)}}
+.sparkles{position:absolute;font-size:clamp(48px,8vw,82px);color:#fff5a7;text-shadow:0 0 16px rgba(255,255,255,.95),0 0 28px rgba(255,225,119,.75);letter-spacing:.4em;animation:sparkle 1s ease-in-out infinite alternate}
+@keyframes sparkle{to{transform:scale(1.08) rotate(3deg);opacity:.72}}
+.hidden{display:none!important}
+
+/* Finish */
+.finish-screen{gap:18px}
+.finish-fish{width:min(520px,70vw);max-height:52dvh;object-fit:contain;filter:drop-shadow(0 18px 24px rgba(25,88,113,.18));animation:floatFish 4s ease-in-out infinite}
+.finish-stars{display:flex;gap:10px;font-size:42px;color:#fff3a6;text-shadow:0 0 12px rgba(255,255,255,.9)}
+.finish-stars span{animation:starPop .35s ease both}
+@keyframes starPop{from{opacity:0;transform:scale(.1) rotate(-25deg)}to{opacity:1;transform:scale(1)}}
+.again-button{width:88px;height:88px;font-size:46px;display:grid;place-items:center}
+
+/* Teacher */
+.teacher-dialog{border:0;padding:0;background:transparent;max-width:none;max-height:none}
+.teacher-dialog::backdrop{background:rgba(13,55,76,.45);backdrop-filter:blur(4px)}
+.teacher-panel{width:min(780px,94vw);max-height:90dvh;overflow:auto;border-radius:28px;background:#fffdf8;padding:24px;box-shadow:var(--shadow);user-select:text}
+.teacher-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.teacher-kicker{margin:0 0 3px;color:#3186a5;font-size:13px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+.teacher-header h2{margin:0;font-size:28px}
+.close-button{border:0;background:transparent;color:#52758a;font-size:34px;line-height:1;cursor:pointer}
+.setting-block{margin-top:17px;padding:17px;border-radius:20px;background:#f3faf9}
+.setting-block h3{margin:0 0 8px;font-size:18px}
+.segments{display:flex;gap:8px;flex-wrap:wrap}
+.segments label{position:relative}.segments input{position:absolute;opacity:0;pointer-events:none}
+.segments span{display:inline-flex;min-width:82px;justify-content:center;padding:10px 16px;border-radius:14px;background:white;border:2px solid transparent;color:#376b81;font-weight:850}
+.segments input:checked+span{background:#dff3f1;border-color:#58bdc2}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-top:12px}
+.toggle-row strong,.toggle-row small{display:block}.toggle-row small{color:#6a8291;margin-top:2px}
+.two-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}.two-cols .toggle-row{margin-top:0}
+.calibration-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.calibration-head p{margin:4px 0 0;color:#607989}
+.count-badge{padding:7px 10px;border-radius:999px;background:#d9f0ed;color:#2a7185;font-weight:900}
+.calibration-digits{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.calibration-digits button{width:52px;height:52px;border:0;border-radius:15px;background:white;color:#275e78;font-size:24px;font-weight:900;box-shadow:0 3px 0 #d7e7e6}.calibration-digits button.done{background:#dff4dc;color:#397650}.calibration-digits button.active{outline:3px solid #52bdc8}
+.calibration-status{color:#5d7788;font-weight:700}.secondary-button,.save-button{border:0;border-radius:14px;padding:11px 15px;font-weight:850;cursor:pointer}.secondary-button{background:#e6f0ef;color:#35687c}.save-button{background:#2aa6b5;color:white;padding:12px 22px}
+.teacher-footer{display:flex;justify-content:flex-end;margin-top:18px}
+.summary-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.summary-card{background:#fff;border-radius:14px;padding:12px}.summary-card small{display:block;color:#688091}.summary-card b{display:block;font-size:26px;margin-top:3px}
+table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border-radius:14px;overflow:hidden}th,td{padding:9px 10px;text-align:left;border-bottom:1px solid #edf3f2}th{font-size:12px;color:#718796;text-transform:uppercase;letter-spacing:.05em}.teacher-advice{margin:12px 0 0;color:#4f7183;font-weight:700;line-height:1.45}
+
+@media(max-width:720px){
+  .teacher-button{width:42px;height:42px;font-size:22px}.hero-fish{width:min(470px,84vw);max-height:51dvh}.play-button{width:92px;height:92px}.fish-stage{width:92vw;height:50dvh}.flash-fish{width:clamp(74px,16vw,105px);height:clamp(74px,16vw,105px)}.number-shell{width:clamp(58px,14vw,74px);height:clamp(58px,14vw,74px);font-size:34px}.answer-buttons{gap:8px;max-width:95vw}.two-cols{grid-template-columns:1fr}.summary-cards{grid-template-columns:1fr}.progress{gap:4px}.progress-dot{width:13px;height:11px}.level-badge{font-size:16px;height:36px}.look-cue{font-size:38px;top:11%}
+}
+@media(max-height:650px){.hero-fish{max-height:44dvh}.play-button{width:82px;height:82px}.fish-stage{height:47dvh}.answer-zone{bottom:10px}.finish-fish{max-height:42dvh}}
+
+  </style>
+</head>
+<body>
+<div id="app" class="app">
+  <div class="world" aria-hidden="true"></div>
+  <div id="bubbleLayer" class="bubble-layer" aria-hidden="true"></div>
+
+  <button id="teacherButton" class="teacher-button" type="button" aria-label="Instellingen">⚙</button>
+
+  <main class="play-area">
+    <section id="startScreen" class="screen active start-screen" aria-label="Start">
+      <img class="hero-fish asset-image" data-asset="rainbow" alt="" draggable="false">
+      <div id="loadingPearl" class="loading-pearl" aria-hidden="true"></div>
+      <button id="startButton" class="pearl-button play-button hidden" type="button" aria-label="Start spel"><span>▶</span></button>
+    </section>
+
+    <section id="gameScreen" class="screen game-screen" aria-label="Spel">
+      <div id="progress" class="progress" aria-label="Voortgang"></div>
+      <div id="levelBadge" class="level-badge" aria-hidden="true"></div>
+
+      <div id="lookCue" class="look-cue" aria-hidden="true">
+        <span class="eye">👀</span>
+      </div>
+
+      <div id="fishStage" class="fish-stage" aria-label="Hoeveelheid"></div>
+
+      <div id="answerZone" class="answer-zone hidden" aria-label="Kies een cijfer">
+        <div id="answerButtons" class="answer-buttons"></div>
+        <div id="marboticTarget" class="marbotic-target hidden" aria-hidden="true">
+          <div class="wood-number">⌁</div>
+        </div>
+      </div>
+
+      <div id="feedbackLayer" class="feedback-layer hidden" aria-hidden="true">
+        <img id="feedbackFish" class="asset-image" data-asset="rainbow" alt="" draggable="false">
+        <div id="sparkles" class="sparkles">✦ ✧ ✦</div>
+      </div>
+    </section>
+
+    <section id="finishScreen" class="screen finish-screen" aria-label="Klaar">
+      <img class="finish-fish asset-image" data-asset="rainbow" alt="" draggable="false">
+      <div id="finishStars" class="finish-stars" aria-hidden="true"></div>
+      <button id="againButton" class="pearl-button again-button" type="button" aria-label="Nog een keer"><span>↻</span></button>
+    </section>
+  </main>
+
+  <dialog id="teacherDialog" class="teacher-dialog">
+    <form id="teacherForm" class="teacher-panel" method="dialog">
+      <header class="teacher-header">
+        <div>
+          <p class="teacher-kicker">Flitsvis</p>
+          <h2>Instellingen leerkracht</h2>
+        </div>
+        <button id="closeTeacherButton" class="close-button" type="button" aria-label="Sluiten">×</button>
+      </header>
+
+      <section class="setting-block">
+        <h3>Startbereik</h3>
+        <div class="segments">
+          <label><input type="radio" name="startLevel" value="3"><span>1–3</span></label>
+          <label><input type="radio" name="startLevel" value="4"><span>1–4</span></label>
+          <label><input type="radio" name="startLevel" value="6"><span>1–6</span></label>
+        </div>
+      </section>
+
+      <section class="setting-block">
+        <h3>Adaptief maximum</h3>
+        <div class="segments">
+          <label><input type="radio" name="maxLevel" value="6"><span>6</span></label>
+          <label><input type="radio" name="maxLevel" value="8"><span>8</span></label>
+          <label><input type="radio" name="maxLevel" value="9"><span>9</span></label>
+        </div>
+        <label class="toggle-row">
+          <span><strong>Plusniveau 7–9 toestaan</strong><small>Standaard blijft het leerdoel t/m 6.</small></span>
+          <input id="plusToggle" type="checkbox">
+        </label>
+      </section>
+
+      <section class="setting-block two-cols">
+        <label class="toggle-row">
+          <span><strong>Gesproken aanwijzingen</strong><small>Kinderen hoeven niets te lezen.</small></span>
+          <input id="speechToggle" type="checkbox">
+        </label>
+        <label class="toggle-row">
+          <span><strong>Marbotic</strong><small>Antwoorden met houten cijfers.</small></span>
+          <input id="marboticToggle" type="checkbox">
+        </label>
+      </section>
+
+      <section id="marboticPanel" class="setting-block hidden">
+        <div class="calibration-head">
+          <div>
+            <h3>

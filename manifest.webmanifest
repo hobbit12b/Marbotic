@@ -1,0 +1,14 @@
+{
+  "name": "Flitsvis – hoeveel zag je?",
+  "short_name": "Flitsvis",
+  "description": "Adaptief flitsspel voor groep 1-2: hoeveelheden herkennen zonder te tellen.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07517d",
+  "theme_color": "#063f67",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,370 @@
+Marbotic kalibreren</h3>
+            <p>Leg elk cijfer drie keer op de iPad. De meting blijft alleen op dit apparaat.</p>
+          </div>
+          <span id="calibrationCount" class="count-badge">0/9</span>
+        </div>
+        <div id="calibrationDigits" class="calibration-digits"></div>
+        <p id="calibrationStatus" class="calibration-status">Tik eerst op een cijfer.</p>
+        <button id="resetCalibration" class="secondary-button" type="button">Kalibratie wissen</button>
+      </section>
+
+      <section id="resultsPanel" class="setting-block">
+        <h3>Laatste sessie</h3>
+        <div id="summaryCards" class="summary-cards"></div>
+        <div id="amountTable"></div>
+        <p id="teacherAdvice" class="teacher-advice"></p>
+      </section>
+
+      <footer class="teacher-footer">
+        <button id="saveSettings" class="save-button" type="button">Opslaan</button>
+      </footer>
+    </form>
+  </dialog>
+</div>
+<script>
+(() => {
+  'use strict';
+
+  const SETTINGS_KEY = 'flitsvis-v3-settings';
+  const CAL_KEY = 'flitsvis-v3-marbotic';
+  const ROUNDS = 15;
+  const ASSET_PARTS = {
+    background:['assetdata/background_00.b64','assetdata/background_01.b64','assetdata/background_02.b64','assetdata/background_03.b64','assetdata/background_04.b64','assetdata/background_05.b64','assetdata/background_06.b64','assetdata/background_07.b64'],
+    rainbow:['assetdata/rainbow_00.b64','assetdata/rainbow_01.b64','assetdata/rainbow_02.b64'],
+    blue:['assetdata/blue_00.b64'], pink:['assetdata/pink_00.b64'], yellow:['assetdata/yellow_00.b64']
+  };
+  const assetURLs = {};
+
+  const BASE_LEVELS = [3, 4, 6];
+  const PLUS_LEVELS = [8, 9];
+
+  const $ = id => document.getElementById(id);
+  const ui = {
+    startScreen:$('startScreen'), gameScreen:$('gameScreen'), finishScreen:$('finishScreen'),
+    startButton:$('startButton'), againButton:$('againButton'), teacherButton:$('teacherButton'),
+    teacherDialog:$('teacherDialog'), teacherForm:$('teacherForm'), closeTeacherButton:$('closeTeacherButton'),
+    saveSettings:$('saveSettings'), plusToggle:$('plusToggle'), speechToggle:$('speechToggle'), marboticToggle:$('marboticToggle'),
+    marboticPanel:$('marboticPanel'), calibrationDigits:$('calibrationDigits'), calibrationCount:$('calibrationCount'), calibrationStatus:$('calibrationStatus'), resetCalibration:$('resetCalibration'),
+    progress:$('progress'), levelBadge:$('levelBadge'), lookCue:$('lookCue'), fishStage:$('fishStage'), answerZone:$('answerZone'), answerButtons:$('answerButtons'), marboticTarget:$('marboticTarget'),
+    feedbackLayer:$('feedbackLayer'), feedbackFish:$('feedbackFish'), sparkles:$('sparkles'), finishStars:$('finishStars'), loadingPearl:$('loadingPearl'),
+    summaryCards:$('summaryCards'), amountTable:$('amountTable'), teacherAdvice:$('teacherAdvice'), bubbleLayer:$('bubbleLayer')
+  };
+
+  const defaults = { startLevel:3, maxLevel:6, plus:false, speech:true, marbotic:false };
+  let settings = loadJSON(SETTINGS_KEY, defaults);
+  let calibration = loadJSON(CAL_KEY, {});
+  let state = null;
+  let calibrationTarget = null;
+  let calibrationSamples = [];
+  let touchLock = false;
+
+  function loadJSON(key, fallback){
+    try { return { ...fallback, ...JSON.parse(localStorage.getItem(key) || '{}') }; }
+    catch { return { ...fallback }; }
+  }
+  function saveJSON(key,value){ try { localStorage.setItem(key, JSON.stringify(value)); } catch(_){} }
+
+  async function init(){
+    createBubbles();
+    await loadIllustrations();
+    buildProgress(0);
+    buildCalibrationButtons();
+    applySettingsToUI();
+    bindEvents();
+    renderResults(null);
+    if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
+  }
+
+  async function loadIllustrations(){
+    const entries=Object.entries(ASSET_PARTS);
+    await Promise.all(entries.map(async ([name,parts])=>{
+      const texts=await Promise.all(parts.map(async path=>{
+        const r=await fetch(path,{cache:'force-cache'});
+        if(!r.ok) throw new Error(`Assetdeel ontbreekt: ${path}`);
+        return r.text();
+      }));
+      const binary=atob(texts.join(''));
+      const bytes=new Uint8Array(binary.length);
+      for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+      assetURLs[name]=URL.createObjectURL(new Blob([bytes],{type:'image/webp'}));
+    }));
+    document.querySelector('.world').style.backgroundImage=`linear-gradient(rgba(44,161,198,.03),rgba(27,118,158,.06)),url('${assetURLs.background}')`;
+    document.querySelectorAll('[data-asset]').forEach(el=>{ const url=assetURLs[el.dataset.asset]; if(url) el.src=url; });
+    ui.loadingPearl?.classList.add('hidden');
+    ui.startButton.classList.remove('hidden');
+  }
+
+  function bindEvents(){
+    // Click is intentionally used for ordinary UI. Marbotic touch interception is conditional and never runs on buttons.
+    ui.startButton.addEventListener('click', startGame);
+    ui.againButton.addEventListener('click', startGame);
+    ui.teacherButton.addEventListener('click', openTeacher);
+    ui.closeTeacherButton.addEventListener('click', () => ui.teacherDialog.close());
+    ui.saveSettings.addEventListener('click', saveSettingsFromUI);
+    ui.marboticToggle.addEventListener('change', () => ui.marboticPanel.classList.toggle('hidden', !ui.marboticToggle.checked));
+    ui.resetCalibration.addEventListener('click', resetCalibrationData);
+
+    document.addEventListener('touchstart', handleMarboticTouchStart, { passive:false });
+    document.addEventListener('touchend', () => { touchLock = false; }, { passive:true });
+    document.addEventListener('touchcancel', () => { touchLock = false; }, { passive:true });
+  }
+
+  function applySettingsToUI(){
+    const s = document.querySelector(`input[name="startLevel"][value="${settings.startLevel}"]`); if(s) s.checked = true;
+    const m = document.querySelector(`input[name="maxLevel"][value="${settings.maxLevel}"]`); if(m) m.checked = true;
+    ui.plusToggle.checked = !!settings.plus;
+    ui.speechToggle.checked = !!settings.speech;
+    ui.marboticToggle.checked = !!settings.marbotic;
+    ui.marboticPanel.classList.toggle('hidden', !settings.marbotic);
+    updateCalibrationUI();
+  }
+
+  function saveSettingsFromUI(){
+    settings.startLevel = Number(document.querySelector('input[name="startLevel"]:checked')?.value || 3);
+    settings.maxLevel = Number(document.querySelector('input[name="maxLevel"]:checked')?.value || 6);
+    settings.plus = ui.plusToggle.checked;
+    settings.speech = ui.speechToggle.checked;
+    settings.marbotic = ui.marboticToggle.checked;
+    if(!settings.plus && settings.maxLevel > 6) settings.maxLevel = 6;
+    if(settings.maxLevel < settings.startLevel) settings.maxLevel = settings.startLevel;
+    saveJSON(SETTINGS_KEY, settings);
+    applySettingsToUI();
+    ui.teacherDialog.close();
+  }
+
+  function openTeacher(){ renderResults(state); ui.teacherDialog.showModal(); }
+
+  function showScreen(el){
+    [ui.startScreen,ui.gameScreen,ui.finishScreen].forEach(s=>s.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  function startGame(){
+    cancelSpeech();
+    state = {
+      round:0,
+      currentMax:Math.min(settings.startLevel, settings.maxLevel),
+      currentAmount:0,
+      awaiting:false,
+      firstTry:true,
+      streak:0,
+      struggle:0,
+      history:[],
+      previousAmount:null,
+      shownAt:0
+    };
+    showScreen(ui.gameScreen);
+    nextRound();
+  }
+
+  function nextRound(){
+    if(!state) return;
+    state.round += 1;
+    if(state.round > ROUNDS){ finishGame(); return; }
+    state.firstTry = true;
+    state.awaiting = false;
+    buildProgress(state.round - 1);
+    ui.levelBadge.textContent = `1–${state.currentMax}`;
+    ui.feedbackLayer.classList.add('hidden');
+    ui.answerZone.classList.add('hidden');
+    ui.fishStage.innerHTML = '';
+    state.currentAmount = chooseAmount();
+    playFlash(false);
+  }
+
+  function chooseAmount(){
+    let n;
+    do { n = 1 + Math.floor(Math.random()*state.currentMax); }
+    while(n === state.previousAmount && state.currentMax > 1);
+    state.previousAmount = n;
+    return n;
+  }
+
+  function playFlash(support){
+    state.awaiting = false;
+    ui.answerZone.classList.add('hidden');
+    ui.lookCue.classList.add('show');
+    renderFish(state.currentAmount, support);
+    speak(support ? 'Kijk nog eens goed.' : 'Kijk goed.');
+    const ms = support ? 1450 : state.currentAmount <= 3 ? 950 : state.currentAmount <= 6 ? 780 : 1050;
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      document.querySelectorAll('.flash-fish').forEach(f=>f.classList.add('in'));
+    }));
+    setTimeout(()=>{
+      ui.lookCue.classList.remove('show');
+      document.querySelectorAll('.flash-fish').forEach(f=>{ f.classList.remove('in'); f.classList.add('out'); });
+      setTimeout(showAnswer, 260);
+    }, ms);
+  }
+
+  function showAnswer(){
+    state.awaiting = true;
+    state.shownAt = performance.now();
+    ui.answerZone.classList.remove('hidden');
+    if(settings.marbotic){
+      ui.answerButtons.classList.add('hidden');
+      ui.marboticTarget.classList.remove('hidden');
+      speak('Leg het goede cijfer neer.');
+    } else {
+      ui.marboticTarget.classList.add('hidden');
+      ui.answerButtons.classList.remove('hidden');
+      buildAnswerButtons(state.currentMax);
+      speak('Hoeveel zag je?');
+    }
+  }
+
+  function renderFish(amount, support){
+    ui.fishStage.innerHTML = '';
+    const pos = positionsFor(amount, support);
+    const files = ['blue','pink','yellow'];
+    pos.forEach((p,i)=>{
+      const img=document.createElement('img');
+      img.className='flash-fish';
+      img.src=assetURLs[files[i%files.length]];
+      img.alt=''; img.draggable=false;
+      img.style.left=`${p[0]}%`; img.style.top=`${p[1]}%`;
+      img.style.setProperty('--rot',`${p[2]||0}deg`);
+      if(i%2===1) img.style.filter += ' saturate(.98)';
+      ui.fishStage.appendChild(img);
+    });
+  }
+
+  function positionsFor(n,support){
+    const patterns={
+      1:[[50,51,0]],
+      2:[[39,51,-5],[61,51,5]],
+      3:[[50,37,0],[39,61,-5],[61,61,5]],
+      4:[[39,39,-4],[61,39,4],[39,64,-4],[61,64,4]],
+      5:[[39,36,-4],[61,36,4],[50,52,0],[39,69,-4],[61,69,4]],
+      6:[[36,37,-4],[50,37,0],[64,37,4],[36,66,-4],[50,66,0],[64,66,4]],
+      7:[[34,37,-4],[50,37,0],[66,37,4],[39,59,-3],[61,59,3],[43,75,-3],[57,75,3]],
+      8:[[33,35,-4],[47,35,0],[61,35,4],[40,54,-3],[58,54,3],[33,73,-4],[47,73,0],[61,73,4]],
+      9:[[34,34,-4],[50,34,0],[66,34,4],[34,54,-4],[50,54,0],[66,54,4],[34,74,-4],[50,74,0],[66,74,4]]
+    };
+    if(!support || n<=6) return patterns[n];
+    if(n===7) return [[34,43,0],[46,43,0],[58,43,0],[70,43,0],[42,66,0],[54,66,0],[66,66,0]];
+    if(n===8) return [[34,42,0],[46,42,0],[58,42,0],[70,42,0],[34,67,0],[46,67,0],[58,67,0],[70,67,0]];
+    return patterns[9];
+  }
+
+  function buildAnswerButtons(max){
+    ui.answerButtons.innerHTML='';
+    for(let i=1;i<=max;i++){
+      const b=document.createElement('button');
+      b.type='button'; b.className='number-shell'; b.textContent=i; b.setAttribute('aria-label',String(i));
+      b.addEventListener('click',()=>submitAnswer(i));
+      ui.answerButtons.appendChild(b);
+    }
+  }
+
+  function submitAnswer(value){
+    if(!state?.awaiting) return;
+    state.awaiting=false;
+    const rt=Math.round(performance.now()-state.shownAt);
+    const correct=value===state.currentAmount;
+    ui.answerZone.classList.add('hidden');
+
+    if(correct){
+      state.history.push({amount:state.currentAmount,correct:true,firstTry:state.firstTry,rt});
+      if(state.firstTry){ state.streak+=1; state.struggle=Math.max(0,state.struggle-1); }
+      maybePromote();
+      showPositiveFeedback();
+      return;
+    }
+
+    if(state.firstTry){
+      state.firstTry=false; state.streak=0; state.struggle+=1;
+      speak('Kijk nog eens.');
+      setTimeout(()=>playFlash(true),350);
+    } else {
+      state.history.push({amount:state.currentAmount,correct:false,firstTry:false,rt});
+      state.struggle+=1; maybeDemote();
+      showAnswerFeedback();
+    }
+  }
+
+  function showPositiveFeedback(){
+    ui.feedbackFish.src=assetURLs.rainbow;
+    ui.sparkles.textContent='✦ ✧ ✦';
+    ui.feedbackLayer.classList.remove('hidden');
+    speak(['Goed gezien!','Ja!','Knap gekeken!'][Math.floor(Math.random()*3)]);
+    setTimeout(()=>{ ui.feedbackLayer.classList.add('hidden'); nextRound(); },720);
+  }
+
+  function showAnswerFeedback(){
+    ui.feedbackFish.src=assetURLs.rainbow;
+    ui.sparkles.textContent=String(state.currentAmount);
+    ui.feedbackLayer.classList.remove('hidden');
+    speak(`Dit waren er ${state.currentAmount}.`);
+    setTimeout(()=>{ ui.feedbackLayer.classList.add('hidden'); nextRound(); },1000);
+  }
+
+  function allowedLevels(){
+    const levels=[...BASE_LEVELS];
+    if(settings.plus) levels.push(...PLUS_LEVELS);
+    return levels.filter(x=>x<=settings.maxLevel);
+  }
+  function maybePromote(){
+    const levels=allowedLevels();
+    const idx=levels.indexOf(state.currentMax);
+    if(idx<0 || idx>=levels.length-1) return;
+    const need=state.currentMax<6?4:5;
+    if(state.streak>=need){ state.currentMax=levels[idx+1]; state.streak=0; ui.levelBadge.textContent=`1–${state.currentMax}`; }
+  }
+  function maybeDemote(){
+    const levels=allowedLevels(); const idx=levels.indexOf(state.currentMax);
+    if(idx<=0 || state.currentMax<=settings.startLevel) return;
+    if(state.struggle>=3){ state.currentMax=Math.max(settings.startLevel,levels[idx-1]); state.struggle=0; ui.levelBadge.textContent=`1–${state.currentMax}`; }
+  }
+
+  function finishGame(){
+    buildProgress(ROUNDS);
+    showScreen(ui.finishScreen);
+    const firstCorrect=state.history.filter(h=>h.correct&&h.firstTry).length;
+    const stars=Math.max(2,Math.min(5,Math.round((firstCorrect/ROUNDS)*5)));
+    ui.finishStars.innerHTML='';
+    for(let i=0;i<stars;i++){ const s=document.createElement('span'); s.textContent='★'; s.style.animationDelay=`${i*.08}s`; ui.finishStars.appendChild(s); }
+    speak('Klaar! Je hebt goed gekeken.');
+    renderResults(state);
+  }
+
+  function buildProgress(done){
+    ui.progress.innerHTML='';
+    for(let i=0;i<ROUNDS;i++){ const d=document.createElement('div'); d.className='progress-dot'+(i<done?' done':''); ui.progress.appendChild(d); }
+  }
+
+  // Marbotic: only intercept 3+ touches when calibration or physical-answer mode is active.
+  function handleMarboticTouchStart(event){
+    const active = calibrationTarget !== null || (settings.marbotic && state?.awaiting);
+    if(!active || touchLock || event.touches.length<3) return;
+    if(event.target.closest('button,input,label,dialog')) return;
+    event.preventDefault();
+    touchLock=true;
+    const pts=[0,1,2].map(i=>({x:event.touches[i].clientX,y:event.touches[i].clientY}));
+    const feature=triangleFeature(pts);
+    if(calibrationTarget!==null) captureCalibration(feature);
+    else recognizePhysicalAnswer(feature);
+  }
+
+  function triangleFeature(pts){
+    const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+    const ds=[dist(pts[0],pts[1]),dist(pts[1],pts[2]),dist(pts[2],pts[0])].sort((a,b)=>a-b);
+    const longest=ds[2]||1;
+    return [ds[0]/longest,ds[1]/longest];
+  }
+
+  function buildCalibrationButtons(){
+    ui.calibrationDigits.innerHTML='';
+    for(let n=1;n<=9;n++){
+      const b=document.createElement('button'); b.type='button'; b.textContent=n; b.dataset.digit=String(n);
+      b.addEventListener('click',()=>startCalibration(n)); ui.calibrationDigits.appendChild(b);
+    }
+  }
+  function startCalibration(n){ calibrationTarget=n; calibrationSamples=[]; updateCalibrationUI(); ui.calibrationStatus.textContent=`Leg cijfer ${n} drie keer neer. 0/3`; }
+  function captureCalibration(feature){
+    calibrationSamples.push(feature);
+    ui.calibrationStatus.textContent=`Leg cijfer ${calibrationTarget} drie keer neer. ${calibrationSamples.length}/3`;
+    if(calibrationSamples.length>=3){
+      calibration[calibrationTarget]=[
+        calibrationSamples.reduce((s,x)=>s+x[0],0)/calibrationSamples.length,
+        calibrationSamples.reduce((s,

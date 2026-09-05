@@ -1,0 +1,62 @@
+x)=>s+x[1],0)/calibrationSamples.length
+      ];
+      saveJSON(CAL_KEY,calibration);
+      const done=calibrationTarget; calibrationTarget=null; calibrationSamples=[]; updateCalibrationUI(); ui.calibrationStatus.textContent=`Cijfer ${done} is opgeslagen.`;
+    }
+  }
+  function recognizePhysicalAnswer(feature){
+    const entries=Object.entries(calibration).filter(([k])=>Number(k)<=state.currentMax);
+    if(!entries.length){ speak('Vraag de juf of meester om de cijfers eerst in te stellen.'); state.awaiting=true; return; }
+    const ranked=entries.map(([digit,f])=>({digit:Number(digit),d:Math.hypot(feature[0]-f[0],feature[1]-f[1])})).sort((a,b)=>a.d-b.d);
+    if(!ranked[0] || ranked[0].d>0.085){ speak('Probeer het cijfer nog eens neer te leggen.'); state.awaiting=true; return; }
+    submitAnswer(ranked[0].digit);
+  }
+  function resetCalibrationData(){ calibration={}; saveJSON(CAL_KEY,calibration); calibrationTarget=null; calibrationSamples=[]; updateCalibrationUI(); ui.calibrationStatus.textContent='Kalibratie is gewist.'; }
+  function updateCalibrationUI(){
+    const count=Object.keys(calibration).filter(k=>calibration[k]).length; ui.calibrationCount.textContent=`${count}/9`;
+    ui.calibrationDigits.querySelectorAll('button').forEach(b=>{
+      const n=b.dataset.digit; b.classList.toggle('done',!!calibration[n]); b.classList.toggle('active',Number(n)===calibrationTarget);
+    });
+  }
+
+  function renderResults(data){
+    ui.summaryCards.innerHTML=''; ui.amountTable.innerHTML='';
+    if(!data?.history?.length){
+      ui.summaryCards.innerHTML='<div class="summary-card"><small>Nog geen sessie</small><b>—</b></div>';
+      ui.teacherAdvice.textContent='Speel eerst een sessie. Daarna zie je per hoeveelheid waar directe herkenning sterk of onzeker is.';
+      return;
+    }
+    const first=data.history.filter(h=>h.correct&&h.firstTry).length;
+    const avg=Math.round(data.history.reduce((s,h)=>s+h.rt,0)/data.history.length);
+    const cards=[['Eerste keer goed',`${first}/${ROUNDS}`],['Gem. reactietijd',`${avg} ms`],['Bereik',`1–${data.currentMax}`]];
+    cards.forEach(([label,value])=>{ const c=document.createElement('div'); c.className='summary-card'; c.innerHTML=`<small>${label}</small><b>${value}</b>`; ui.summaryCards.appendChild(c); });
+    const grouped={}; data.history.forEach(h=>{ grouped[h.amount]??={seen:0,first:0,correct:0,totalRt:0}; const g=grouped[h.amount]; g.seen++; g.first+=h.correct&&h.firstTry?1:0; g.correct+=h.correct?1:0; g.totalRt+=h.rt; });
+    let html='<table><thead><tr><th>Hoeveelheid</th><th>1e keer goed</th><th>Goed</th><th>Tijd</th></tr></thead><tbody>';
+    Object.keys(grouped).sort((a,b)=>a-b).forEach(k=>{ const g=grouped[k]; html+=`<tr><td>${k}</td><td>${g.first}/${g.seen}</td><td>${g.correct}/${g.seen}</td><td>${Math.round(g.totalRt/g.seen)} ms</td></tr>`; });
+    html+='</tbody></table>'; ui.amountTable.innerHTML=html;
+    const ratio=first/ROUNDS;
+    if(ratio>=.8 && data.currentMax>=6) ui.teacherAdvice.textContent='Dit kind reageert waarschijnlijk voldoende vlot en zeker tot en met 6. Controleer bij 5 en 6 of het antwoord echt direct komt en niet via snel tellen.';
+    else if(ratio>=.6) ui.teacherAdvice.textContent='Blijf nog even in dit bereik. Let vooral op de overgang van 3 naar 4–6 en op het herkennen van groepjes.';
+    else ui.teacherAdvice.textContent='Ga terug naar een lager bereik en gebruik vaste patronen. Het doel is zien en weten, niet één voor één tellen.';
+  }
+
+  function createBubbles(){
+    for(let i=0;i<13;i++){
+      const b=document.createElement('div'); b.className='bg-bubble'; const size=8+Math.random()*19;
+      b.style.width=`${size}px`; b.style.height=`${size}px`; b.style.left=`${Math.random()*100}%`; b.style.opacity=.2+Math.random()*.35;
+      b.style.setProperty('--drift',`${Math.random()*40-20}px`); b.style.animationDuration=`${10+Math.random()*11}s`; b.style.animationDelay=`-${Math.random()*18}s`; ui.bubbleLayer.appendChild(b);
+    }
+  }
+
+  function speak(text){
+    if(!settings.speech || !('speechSynthesis' in window)) return;
+    cancelSpeech(); const u=new SpeechSynthesisUtterance(text); u.lang='nl-NL'; u.rate=.92; u.pitch=1.03; speechSynthesis.speak(u);
+  }
+  function cancelSpeech(){ if('speechSynthesis' in window) speechSynthesis.cancel(); }
+
+  init();
+})();
+
+</script>
+</body>
+</html>
